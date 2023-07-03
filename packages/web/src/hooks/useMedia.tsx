@@ -1,7 +1,8 @@
-import { startTransition, useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useIsomorphicLayoutEffect } from '@tamagui/constants'
+import { useMemo, useSyncExternalStore } from 'react'
 
-import { getConfig } from '../config.js'
-import { createProxy } from '../helpers/createProxy.js'
+import { getConfig } from '../config'
+import { createProxy } from '../helpers/createProxy'
 import { matchMedia } from '../helpers/matchMedia'
 import type {
   MediaQueries,
@@ -9,8 +10,8 @@ import type {
   MediaQueryObject,
   MediaQueryState,
   TamaguiInternalConfig,
-} from '../types.js'
-import { useSafeRef } from './useSafeRef.js'
+} from '../types'
+import { useSafeRef } from './useSafeRef'
 
 export let mediaState: MediaQueryState =
   // development only safeguard
@@ -35,7 +36,8 @@ export let mediaState: MediaQueryState =
 
 export const mediaQueryConfig: MediaQueries = {}
 export const getMedia = () => mediaState
-export const mediaKeysWithAndWithout$ = new Set<string>()
+export const mediaKeys = new Set<string>() // with $ prefix
+export const isMediaKey = (key: string) => mediaKeys.has(key)
 
 // for SSR capture it at time of startup
 let initState: MediaQueryState
@@ -48,8 +50,10 @@ export const getMediaKeyImportance = (key: string) => {
   if (process.env.NODE_ENV === 'development' && key[0] === '$') {
     throw new Error('use short key')
   }
-  // + 2 because we set base usedKeys=1 in getSplitStyles and all media go above 1
-  return mediaKeysOrdered.indexOf(key) + 2
+  // + 100 because we set base usedKeys=1, psuedos are 2-N (however many we have)
+  // all media go above all pseudos so we need to pad it based on that
+  // right now theres 5 pseudos but in the future could be a few more
+  return mediaKeysOrdered.indexOf(key) + 100
 }
 
 const dispose = new Set<Function>()
@@ -59,8 +63,7 @@ export const configureMedia = (config: TamaguiInternalConfig) => {
   if (!media) return
   for (const key in media) {
     mediaState[key] = mediaQueryDefaultActive?.[key] || false
-    mediaKeysWithAndWithout$.add(key)
-    mediaKeysWithAndWithout$.add(`$${key}`)
+    mediaKeys.add(`$${key}`)
   }
   Object.assign(mediaQueryConfig, media)
   initState = { ...mediaState }
@@ -117,7 +120,8 @@ export function setupMediaListeners() {
 
 export function useMediaListeners(config: TamaguiInternalConfig) {
   if (config.disableSSR) return
-  useEffect(() => {
+
+  useIsomorphicLayoutEffect(() => {
     setupMediaListeners()
   }, [])
 }
@@ -129,9 +133,7 @@ function updateCurrentState() {
   flushing = true
   Promise.resolve().then(() => {
     flushing = false
-    startTransition(() => {
-      listeners.forEach((cb) => cb(mediaState))
-    })
+    listeners.forEach((cb) => cb(mediaState))
   })
 }
 
@@ -184,7 +186,9 @@ export function useMedia(uid?: any, debug?: any): UseMediaState {
         componentState?.keys ??
         ((!componentState || componentState.enabled) && touched ? [...touched] : null)
 
-      const hasntUpdated = testKeys?.every((key) => mediaState[key] === prev[key])
+      const hasntUpdated =
+        !testKeys || testKeys?.every((key) => mediaState[key] === prev[key])
+
       if (hasntUpdated) {
         return prev
       }
@@ -209,6 +213,9 @@ export function useMedia(uid?: any, debug?: any): UseMediaState {
 }
 
 /**
+ *
+ * @deprecated use useProps instead which is the same but also expands shorthands (which you can disable)
+ *
  * Useful for more complex components that need access to the currently active props,
  * accounting for the currently active media queries.
  *
@@ -216,20 +223,24 @@ export function useMedia(uid?: any, debug?: any): UseMediaState {
  *
  * */
 export function useMediaPropsActive<A extends Object>(
-  props: A
+  props: A,
+  opts?: { expandShorthands?: boolean }
 ): {
   // remove all media
   [Key in keyof A extends `$${string}` ? never : keyof A]?: A[Key]
 } {
   const media = useMedia()
+  const shouldExpandShorthands = opts?.expandShorthands
 
   return useMemo(() => {
+    const config = getConfig()
     const next = {} as A
     const importancesUsed = {}
     const propNames = Object.keys(props)
+    const len = propNames.length
 
-    for (let i = propNames.length - 1; i >= 0; i--) {
-      const key = propNames[i]
+    for (let i = 0; i < len; i++) {
+      let key = propNames[i]
       const val = props[key]
       if (key[0] === '$') {
         const mediaKey = key.slice(1)
@@ -237,11 +248,18 @@ export function useMediaPropsActive<A extends Object>(
         if (val && typeof val === 'object') {
           const subKeys = Object.keys(val)
           for (let j = subKeys.length; j--; j >= 0) {
-            const subKey = subKeys[j]
-            mergeMediaByImportance(next, mediaKey, subKey, val[subKey], importancesUsed)
+            let subKey = subKeys[j]
+            const value = val[subKey]
+            if (shouldExpandShorthands) {
+              subKey = config.shorthands[subKey] || subKey
+            }
+            mergeMediaByImportance(next, mediaKey, subKey, value, importancesUsed)
           }
         }
       } else {
+        if (shouldExpandShorthands) {
+          key = config.shorthands[key] || key
+        }
         mergeMediaByImportance(next, '', key, val, importancesUsed)
       }
     }

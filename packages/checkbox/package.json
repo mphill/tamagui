@@ -1,6 +1,6 @@
 {
   "name": "@tamagui/checkbox",
-  "version": "1.7.5",
+  "version": "1.37.0",
   "sideEffects": [
     "*.css"
   ],
@@ -19,22 +19,22 @@
     "watch": "tamagui-build --watch"
   },
   "dependencies": {
-    "@radix-ui/react-use-previous": "^0.1.1",
-    "@tamagui/core": "1.7.5",
-    "@tamagui/create-context": "1.7.5",
-    "@tamagui/focusable": "1.7.5",
-    "@tamagui/font-size": "1.7.5",
-    "@tamagui/get-size": "1.7.5",
-    "@tamagui/helpers-tamagui": "1.7.5",
-    "@tamagui/label": "1.7.5",
-    "@tamagui/stacks": "1.7.5",
-    "@tamagui/use-controllable-state": "1.7.5"
+    "@radix-ui/react-use-previous": "^1.0.0",
+    "@tamagui/core": "1.37.0",
+    "@tamagui/create-context": "1.37.0",
+    "@tamagui/focusable": "1.37.0",
+    "@tamagui/font-size": "1.37.0",
+    "@tamagui/get-token": "1.37.0",
+    "@tamagui/helpers-tamagui": "1.37.0",
+    "@tamagui/label": "1.37.0",
+    "@tamagui/stacks": "1.37.0",
+    "@tamagui/use-controllable-state": "1.37.0"
   },
   "exports": {
     "./package.json": "./package.json",
     ".": {
       "types": "./types/index.d.ts",
-      "import": "./dist/esm/index.mjs",
+      "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js"
     }
   },
@@ -42,7 +42,7 @@
     "react": "*"
   },
   "devDependencies": {
-    "@tamagui/build": "1.7.5",
+    "@tamagui/build": "1.37.0",
     "react": "^18.2.0"
   },
   "publishConfig": {

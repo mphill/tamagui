@@ -1,6 +1,6 @@
 {
   "name": "@tamagui/sheet",
-  "version": "1.7.5",
+  "version": "1.37.0",
   "sideEffects": [
     "*.css"
   ],
@@ -18,38 +18,39 @@
   "scripts": {
     "build": "tamagui-build",
     "watch": "tamagui-build --watch",
+    "clean": "tamagui-build clean",
     "lint": "../../node_modules/.bin/rome check src",
-    "lint:fix": "../../node_modules/.bin/rome check --apply-suggested src"
+    "lint:fix": "../../node_modules/.bin/rome check --apply src"
   },
   "exports": {
     "./package.json": "./package.json",
     ".": {
       "types": "./types/index.d.ts",
-      "import": "./dist/esm/index.mjs",
+      "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js"
     }
   },
   "dependencies": {
-    "@tamagui/animations-react-native": "1.7.5",
-    "@tamagui/compose-refs": "1.7.5",
-    "@tamagui/core": "1.7.5",
-    "@tamagui/create-context": "1.7.5",
-    "@tamagui/portal": "1.7.5",
-    "@tamagui/remove-scroll": "1.7.5",
-    "@tamagui/scroll-view": "1.7.5",
-    "@tamagui/stacks": "1.7.5",
-    "@tamagui/use-constant": "1.7.5",
-    "@tamagui/use-controllable-state": "1.7.5",
-    "@tamagui/use-keyboard-visible": "1.7.5"
+    "@tamagui/animations-react-native": "1.37.0",
+    "@tamagui/compose-refs": "1.37.0",
+    "@tamagui/core": "1.37.0",
+    "@tamagui/create-context": "1.37.0",
+    "@tamagui/portal": "1.37.0",
+    "@tamagui/remove-scroll": "1.37.0",
+    "@tamagui/scroll-view": "1.37.0",
+    "@tamagui/stacks": "1.37.0",
+    "@tamagui/use-constant": "1.37.0",
+    "@tamagui/use-controllable-state": "1.37.0",
+    "@tamagui/use-keyboard-visible": "1.37.0"
   },
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
   },
   "devDependencies": {
-    "@tamagui/build": "1.7.5",
+    "@tamagui/build": "1.37.0",
     "react": "^18.2.0",
-    "react-native": "*"
+    "react-native": "^0.71.7"
   },
   "publishConfig": {
     "access": "public"

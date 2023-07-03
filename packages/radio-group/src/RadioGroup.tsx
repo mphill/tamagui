@@ -13,7 +13,7 @@ import {
 } from '@tamagui/core'
 import { Scope, createContextScope } from '@tamagui/create-context'
 import { registerFocusable } from '@tamagui/focusable'
-import { getSize, stepTokenUpOrDown } from '@tamagui/get-size'
+import { getSize } from '@tamagui/get-token'
 import { useLabelContext } from '@tamagui/label'
 import { ThemeableStack } from '@tamagui/stacks'
 import { useControllableState } from '@tamagui/use-controllable-state'
@@ -50,15 +50,15 @@ const RADIO_GROUP_INDICATOR_NAME = 'RadioGroupIndicator'
 
 const RadioIndicatorFrame = styled(ThemeableStack, {
   name: RADIO_GROUP_INDICATOR_NAME,
-  pointerEvents: 'none',
 
   variants: {
     unstyled: {
       false: {
-        w: '40%',
-        h: '40%',
-        br: 1000,
+        width: '33%',
+        height: '33%',
+        borderRadius: 1000,
         backgroundColor: '$color',
+        pressTheme: true,
       },
     },
   } as const,
@@ -87,7 +87,6 @@ const RadioIndicator = RadioIndicatorFrame.extractable(
       if (forceMount || checked) {
         return (
           <RadioIndicatorFrame
-            theme="active"
             data-state={getState(checked)}
             data-disabled={disabled ? '' : undefined}
             {...indicatorProps}
@@ -135,10 +134,17 @@ const RadioGroupItemFrame = styled(ThemeableStack, {
 
         hoverStyle: {
           borderColor: '$borderColorHover',
+          backgroundColor: '$backgroundHover',
         },
 
         focusStyle: {
+          borderColor: '$borderColorHover',
+          backgroundColor: '$backgroundHover',
+        },
+
+        pressStyle: {
           borderColor: '$borderColorFocus',
+          backgroundColor: '$backgroundFocus',
         },
       },
     },
@@ -217,7 +223,9 @@ const RadioGroupItem = RadioGroupItemFrame.extractable(
               isArrowKeyPressedRef.current = true
             }
           }
-          const handleKeyUp = () => (isArrowKeyPressedRef.current = false)
+          const handleKeyUp = () => {
+            isArrowKeyPressedRef.current = false
+          }
           document.addEventListener('keydown', handleKeyDown)
           document.addEventListener('keyup', handleKeyUp)
           return () => {

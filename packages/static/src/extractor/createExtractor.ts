@@ -4,18 +4,17 @@ import { basename, relative } from 'path'
 import traverse, { NodePath, TraverseOptions } from '@babel/traverse'
 import * as t from '@babel/types'
 import {
-  PseudoStyles,
-  StaticConfigParsed,
   expandStyles,
   getSplitStyles,
   mediaQueryConfig,
   proxyThemeVariables,
   pseudoDescriptors,
 } from '@tamagui/core-node'
+import type { PseudoStyles, StaticConfigParsed } from '@tamagui/web'
 import type { ViewStyle } from 'react-native'
 import { createDOMProps } from 'react-native-web-internals'
 
-import { FAILED_EVAL } from '../constants.js'
+import { FAILED_EVAL } from '../constants'
 import type {
   ExtractedAttr,
   ExtractedAttrAttr,
@@ -25,30 +24,29 @@ import type {
   TamaguiOptions,
   TamaguiOptionsWithFileInfo,
   Ternary,
-} from '../types.js'
-import { createEvaluator, createSafeEvaluator } from './createEvaluator.js'
-import { evaluateAstNode } from './evaluateAstNode.js'
+} from '../types'
+import { TamaguiProjectInfo } from './bundleConfig'
+import { createEvaluator, createSafeEvaluator } from './createEvaluator'
+import { evaluateAstNode } from './evaluateAstNode'
 import {
   attrStr,
   findComponentName,
   getValidComponent,
+  getValidComponentsPaths,
   getValidImport,
   isPresent,
   isValidImport,
   objToStr,
-} from './extractHelpers.js'
-import { findTopmostFunction } from './findTopmostFunction.js'
-import {
-  cleanupBeforeExit,
-  getStaticBindingsForScope,
-} from './getStaticBindingsForScope.js'
-import { literalToAst } from './literalToAst.js'
-import { TamaguiProjectInfo, loadTamagui, loadTamaguiSync } from './loadTamagui.js'
-import { logLines } from './logLines.js'
-import { normalizeTernaries } from './normalizeTernaries.js'
-import { removeUnusedHooks } from './removeUnusedHooks.js'
-import { timer } from './timer.js'
-import { validHTMLAttributes } from './validHTMLAttributes.js'
+} from './extractHelpers'
+import { findTopmostFunction } from './findTopmostFunction'
+import { cleanupBeforeExit, getStaticBindingsForScope } from './getStaticBindingsForScope'
+import { literalToAst } from './literalToAst'
+import { loadTamagui, loadTamaguiSync } from './loadTamagui'
+import { logLines } from './logLines'
+import { normalizeTernaries } from './normalizeTernaries'
+import { removeUnusedHooks } from './removeUnusedHooks'
+import { timer } from './timer'
+import { validHTMLAttributes } from './validHTMLAttributes'
 
 const UNTOUCHED_PROPS = {
   key: true,
@@ -73,7 +71,6 @@ const validHooks = {
   useTheme: true,
 }
 
-const isAttr = (x: ExtractedAttr): x is ExtractedAttrAttr => x.type === 'attr'
 const createTernary = (x: Ternary) => x
 
 export type Extractor = ReturnType<typeof createExtractor>
@@ -82,11 +79,15 @@ type FileOrPath = NodePath<t.Program> | t.File
 
 let hasLoggedBaseInfo = false
 
+function isFullyDisabled(props: TamaguiOptions) {
+  return props.disableExtraction && props.disableDebugAttr
+}
+
 export function createExtractor(
   { logger = console }: ExtractorOptions = { logger: console }
 ) {
   if (!process.env.TAMAGUI_TARGET) {
-    console.log('⚠️ Please set process.env.TAMAGUI_TARGET to either "web" or "native"')
+    console.warn('⚠️ Please set process.env.TAMAGUI_TARGET to either "web" or "native"')
     process.exit(1)
   }
 
@@ -105,17 +106,17 @@ export function createExtractor(
   // otherwise we'd import `rnw` and cause it to evaluate react-native-web which causes errors
 
   function loadSync(props: TamaguiOptions) {
-    return (projectInfo ||= loadTamaguiSync({
-      config: props.config || 'tamagui.config.ts',
-      components: props.components || ['tamagui'],
-    }))
+    if (isFullyDisabled(props)) {
+      return null
+    }
+    return (projectInfo ||= loadTamaguiSync(props))
   }
 
   async function load(props: TamaguiOptions) {
-    return (projectInfo ||= await loadTamagui({
-      config: props.config || 'tamagui.config.ts',
-      components: props.components || ['tamagui'],
-    }))
+    if (isFullyDisabled(props)) {
+      return null
+    }
+    return (projectInfo ||= await loadTamagui(props))
   }
 
   return {
@@ -130,11 +131,11 @@ export function createExtractor(
     },
     parseSync: (f: FileOrPath, props: ExtractorParseProps) => {
       const projectInfo = loadSync(props)
-      return parseWithConfig(projectInfo, f, props)
+      return parseWithConfig(projectInfo || {}, f, props)
     },
     parse: async (f: FileOrPath, props: ExtractorParseProps) => {
       const projectInfo = await load(props)
-      return parseWithConfig(projectInfo, f, props)
+      return parseWithConfig(projectInfo || {}, f, props)
     },
   }
 
@@ -170,8 +171,10 @@ export function createExtractor(
     if (disable === true || (Array.isArray(disable) && disable.includes(sourcePath))) {
       return null
     }
-    if (!components) {
-      throw new Error(`Must provide components`)
+    if (!isFullyDisabled(options)) {
+      if (!components) {
+        throw new Error(`Must provide components`)
+      }
     }
     if (
       sourcePath &&
@@ -196,11 +199,11 @@ export function createExtractor(
         return false
       }
       return !!(
-        !!staticConfig.validStyles?.[name] ||
-        !!pseudoDescriptors[name] ||
+        staticConfig.validStyles?.[name] ||
+        pseudoDescriptors[name] ||
         // dont disable variants or else you lose many things flattening
         staticConfig.variants?.[name] ||
-        projectInfo?.tamaguiConfig.shorthands[name] ||
+        projectInfo?.tamaguiConfig?.shorthands[name] ||
         (name[0] === '$' ? !!mediaQueryConfig[name.slice(1)] : false)
       )
     }
@@ -215,7 +218,7 @@ export function createExtractor(
     const propsWithFileInfo: TamaguiOptionsWithFileInfo = {
       ...options,
       sourcePath,
-      allLoadedComponents: [...components],
+      allLoadedComponents: components ? [...components] : [],
     }
 
     if (!hasLoggedBaseInfo) {
@@ -231,25 +234,36 @@ export function createExtractor(
         )
       }
       if (process.env.DEBUG?.startsWith('tamagui')) {
-        const next = [...propsWithFileInfo.allLoadedComponents].map((info) => {
-          const nameToInfo = { ...info.nameToInfo }
-          for (const key in nameToInfo) {
-            delete nameToInfo[key].staticConfig.validStyles
-          }
-          return { ...info, nameToInfo }
-        })
-        logger.info(['loaded:', JSON.stringify(next, null, 2)].join('\n'))
+        logger.info(
+          [
+            'loaded:',
+            JSON.stringify(propsWithFileInfo.allLoadedComponents, null, 2),
+          ].join('\n')
+        )
       }
     }
 
     tm.mark('load-tamagui', !!shouldPrintDebug)
 
-    const firstThemeName = Object.keys(tamaguiConfig.themes)[0]
-    const firstTheme = tamaguiConfig.themes[firstThemeName]
+    if (!isFullyDisabled(options)) {
+      if (!tamaguiConfig?.themes) {
+        console.error(
+          `⛔️ Error: Missing "themes" in your tamagui.config file, this may be due to duplicated dependency versions. Try out https://github.com/bmish/check-dependency-version-consistency to see if there are mis-matches, or search your lockfile.`
+        )
+        // rome-ignore lint/nursery/noConsoleLog: <explanation>
+        console.log(`  Got config:`, tamaguiConfig)
+        process.exit(0)
+      }
+    }
+
+    const firstThemeName = Object.keys(tamaguiConfig?.themes || {})[0]
+    const firstTheme = tamaguiConfig?.themes[firstThemeName] || {}
 
     if (!firstTheme || typeof firstTheme !== 'object') {
       console.error(`Missing theme, an error occurred when importing your config`)
+      // rome-ignore lint/nursery/noConsoleLog: <explanation>
       console.log(`Got config:`, tamaguiConfig)
+      // rome-ignore lint/nursery/noConsoleLog: <explanation>
       console.log(`Looking for theme:`, firstThemeName)
       process.exit(0)
     }
@@ -270,12 +284,15 @@ export function createExtractor(
     const body =
       fileOrPath.type === 'Program' ? fileOrPath.get('body') : fileOrPath.program.body
 
-    if (Object.keys(components).length === 0) {
-      console.warn(
-        `Warning: Tamagui didn't find any valid components (DEBUG=tamagui for more)`
-      )
-      if (process.env.DEBUG === 'tamagui') {
-        console.log(`components`, Object.keys(components), components)
+    if (!isFullyDisabled(options)) {
+      if (Object.keys(components || []).length === 0) {
+        console.warn(
+          `Warning: Tamagui didn't find any valid components (DEBUG=tamagui for more)`
+        )
+        if (process.env.DEBUG === 'tamagui') {
+          // rome-ignore lint/nursery/noConsoleLog: <explanation>
+          console.log(`components`, Object.keys(components || []), components)
+        }
       }
     }
 
@@ -320,9 +337,11 @@ export function createExtractor(
         )
         if (shouldPrintDebug === 'verbose') {
           logger.info(
-            `import ${names.join(
+            ` - import ${isValidComponent ? '✅' : '⇣'} - ${names.join(
               ', '
-            )} from ${moduleName} isValidComponent ${isValidComponent}`
+            )} from '${moduleName}' - (valid: ${JSON.stringify(
+              getValidComponentsPaths(propsWithFileInfo)
+            )})`
           )
         }
         if (isValidComponent) {
@@ -334,7 +353,7 @@ export function createExtractor(
 
     if (shouldPrintDebug) {
       logger.info(
-        `file: ${sourcePath} ${JSON.stringify({ doesUseValidImport, hasImportedTheme })}`
+        `${JSON.stringify({ doesUseValidImport, hasImportedTheme }, null, 2)}\n`
       )
     }
 
@@ -495,10 +514,13 @@ export function createExtractor(
           // skip fontFamily its basically a "variant", important for theme use to be value always
           'fontFamily',
           'name',
+          'focusStyle',
+          'hoverStyle',
+          'pressStyle',
         ])
 
         // for now dont parse variants, spreads, etc
-        const skipped: (t.ObjectProperty | t.SpreadElement | t.ObjectMethod)[] = []
+        const skipped = new Set<t.ObjectProperty | t.SpreadElement | t.ObjectMethod>()
         const styles = {}
 
         // Generate scope object at this level
@@ -525,17 +547,20 @@ export function createExtractor(
             !t.isObjectProperty(property) ||
             !t.isIdentifier(property.key) ||
             !isValidStyleKey(property.key.name, Component.staticConfig) ||
+            // TODO make pseudos and variants work
+            // skip pseudos
+            pseudoDescriptors[property.key.name] ||
             // skip variants
             Component.staticConfig.variants?.[property.key.name] ||
             componentSkipProps.has(property.key.name)
           ) {
-            skipped.push(property)
+            skipped.add(property)
             continue
           }
           // attempt eval
           const out = attemptEvalSafe(property.value)
           if (out === FAILED_EVAL) {
-            skipped.push(property)
+            skipped.add(property)
           } else {
             styles[property.key.name] = out
           }
@@ -565,7 +590,7 @@ export function createExtractor(
         }
 
         // // add in the style object as classnames
-        // const atomics = getStylesAtomic(out.style)
+        // const atomics = getPropsAtomic(out.style)
         // for (const atomic of atomics) {
         //   out.rulesToInsert = out.rulesToInsert || []
         //   out.rulesToInsert.push(atomic)
@@ -573,23 +598,35 @@ export function createExtractor(
         // }
 
         if (shouldPrintDebug) {
-          // prettier-ignore
-          logger.info([`Extracted styled(${variableName})\n`, JSON.stringify(styles, null, 2), '\n  rulesToInsert:', out.rulesToInsert.flatMap((rule) => rule.rules).join('\n')].join(' '))
+          logger.info(
+            [
+              `Extracted styled(${variableName})\n`,
+              JSON.stringify(styles, null, 2),
+              '\n classNames:',
+              JSON.stringify(classNames, null, 2),
+              '\n  rulesToInsert:',
+              out.rulesToInsert.flatMap((rule) => rule.rules).join('\n'),
+            ].join(' ')
+          )
         }
 
         // leave only un-parsed props...
-        definition.properties = skipped
-
-        // ... + key: className
-        for (const cn in classNames) {
-          if (componentSkipProps.has(cn)) {
-            continue
+        // preserve original order
+        definition.properties = definition.properties.map((prop) => {
+          if (
+            skipped.has(prop) ||
+            !t.isObjectProperty(prop) ||
+            !t.isIdentifier(prop.key)
+          ) {
+            return prop
           }
-          const val = classNames[cn]
-          definition.properties.push(
-            t.objectProperty(t.stringLiteral(cn), t.stringLiteral(val))
-          )
-        }
+          const key = prop.key.name
+          const value = classNames[key]
+          if (value) {
+            return t.objectProperty(t.stringLiteral(key), t.stringLiteral(value))
+          }
+          return prop
+        })
 
         if (out.rulesToInsert) {
           for (const { identifier, rules } of out.rulesToInsert) {
@@ -1052,6 +1089,8 @@ export function createExtractor(
                 defaultTheme,
                 staticConfig.defaultProps,
                 { resolveVariablesAs: 'auto' },
+                // TODO fontFamily?
+                undefined,
                 undefined,
                 undefined,
                 shouldPrintDebug
@@ -1586,7 +1625,7 @@ export function createExtractor(
                   return []
                 }
                 const value = staticConfig.defaultProps[key]
-                const name = tamaguiConfig.shorthands[key] || key
+                const name = tamaguiConfig?.shorthands[key] || key
                 if (value === undefined) {
                   logger.warn(
                     `⚠️ Error evaluating default style for component, prop ${key} ${value}`
@@ -1633,40 +1672,41 @@ export function createExtractor(
             pressIn: false,
           }
 
-          function splitVariants(style: any) {
-            const variants = {}
-            const styles = {}
-            for (const key in style) {
-              if (staticConfig.variants?.[key]) {
-                variants[key] = style[key]
-              } else {
-                styles[key] = style[key]
-              }
+          function mergeToEnd(obj: Object, key: string, val: any) {
+            if (key in obj) {
+              delete obj[key]
             }
-            return {
-              variants,
-              styles,
-            }
+            obj[key] = val
           }
 
+          // preserves order
           function expandStylesWithoutVariants(style: any) {
-            const { variants, styles } = splitVariants(style)
-            return {
-              ...expandStyles(styles),
-              ...variants,
+            let res = {}
+            for (const key in style) {
+              if (staticConfig.variants && key in staticConfig.variants) {
+                mergeToEnd(res, key, style[key])
+              } else {
+                const expanded = expandStyles({ [key]: style[key] })
+                for (const key in expanded) {
+                  mergeToEnd(res, key, expanded[key])
+                }
+              }
             }
+            return res
           }
 
           // evaluates all static attributes into a simple object
           let foundStaticProps = {}
+
           for (const key in attrs) {
             const cur = attrs[key]
             if (cur.type === 'style') {
               // remove variants because they are processed later, and can lead to invalid values here
               // see <Spacer flex /> where flex looks like a valid style, but is a variant
-              foundStaticProps = {
-                ...foundStaticProps,
-                ...expandStylesWithoutVariants(cur.value),
+              const expanded = expandStylesWithoutVariants(cur.value)
+              // preserve order
+              for (const key in expanded) {
+                mergeToEnd(foundStaticProps, key, expanded[key])
               }
               continue
             }
@@ -1681,10 +1721,7 @@ export function createExtractor(
               // undefined = boolean true
               const value = attemptEvalSafe(cur.value.value || t.booleanLiteral(true))
               if (value !== FAILED_EVAL) {
-                foundStaticProps = {
-                  ...foundStaticProps,
-                  [key]: value,
-                }
+                mergeToEnd(foundStaticProps, key, value)
               }
             }
           }
@@ -1721,6 +1758,8 @@ export function createExtractor(
                         defaultTheme,
                         completeProps,
                         { ...state, resolveVariablesAs: 'auto' },
+                        // TODO fontFamily?
+                        undefined,
                         undefined,
                         undefined,
                         shouldPrintDebug
@@ -1771,7 +1810,7 @@ export function createExtractor(
 
             let key = Object.keys(cur.value)[0]
             const value = cur.value[key]
-            const fullKey = tamaguiConfig.shorthands[key]
+            const fullKey = tamaguiConfig?.shorthands[key]
             // expand shorthands
             if (fullKey) {
               cur.value = { [fullKey]: value }
@@ -1825,7 +1864,7 @@ export function createExtractor(
                 prev[key] = prev[key] || {}
                 Object.assign(prev[key], next[key])
               } else {
-                prev[key] = next[key]
+                mergeToEnd(prev, key, next[key])
               }
             }
           }
@@ -1895,12 +1934,12 @@ export function createExtractor(
           }
 
           // post process
-          const getStyles = (props: Object | null, debugName = '') => {
-            if (!props || !Object.keys(props).length) {
-              if (shouldPrintDebug) logger.info([' getStyles() no props'].join(' '))
+          const getProps = (props: Object | null, debugName = '') => {
+            if (!props) {
+              if (shouldPrintDebug) logger.info([' getProps() no props'].join(' '))
               return {}
             }
-            if (excludeProps && !!excludeProps.size) {
+            if (excludeProps?.size) {
               for (const key in props) {
                 if (excludeProps.has(key)) {
                   if (shouldPrintDebug) logger.info([' delete excluded', key].join(' '))
@@ -1908,6 +1947,7 @@ export function createExtractor(
                 }
               }
             }
+
             try {
               const out = getSplitStyles(
                 props,
@@ -1920,30 +1960,31 @@ export function createExtractor(
                 undefined,
                 undefined,
                 undefined,
-                debugPropValue
+                debugPropValue || shouldPrintDebug
               )
 
-              const outStyle = {
+              const outProps = {
+                ...out.viewProps,
                 ...out.style,
                 ...out.pseudos,
               }
 
-              if (shouldPrintDebug === 'verbose') {
+              if (shouldPrintDebug) {
                 // prettier-ignore
-                logger.info(`       getStyles ${debugName} (props in): ${Object.keys(props)}`)
+                logger.info(`\n       getProps (props in): ${logLines(objToStr(props))}`)
                 // prettier-ignore
-                logger.info(`       getStyles ${debugName} (outStyle): ${Object.keys(outStyle)}`)
+                logger.info(`\n       getProps (outProps): ${logLines(objToStr(outProps))}`)
               }
 
-              return outStyle
+              return outProps
             } catch (err: any) {
               logger.info(['error', err.message, err.stack].join(' '))
               return {}
             }
           }
 
-          // used to ensure we pass the entire prop bundle to getStyles
-          const completeStyles = getStyles(completeProps, 'completeStyles')
+          // used to ensure we pass the entire prop bundle to getProps
+          const completeStyles = getProps(completeProps, 'completeStyles')
 
           if (!completeStyles) {
             throw new Error(`Impossible, no styles`)
@@ -1956,8 +1997,8 @@ export function createExtractor(
             try {
               switch (attr.type) {
                 case 'ternary': {
-                  const a = getStyles(attr.value.alternate, 'ternary.alternate')
-                  const c = getStyles(attr.value.consequent, 'ternary.consequent')
+                  const a = getProps(attr.value.alternate, 'ternary.alternate')
+                  const c = getProps(attr.value.consequent, 'ternary.consequent')
                   if (a) attr.value.alternate = a
                   if (c) attr.value.consequent = c
                   if (shouldPrintDebug)
@@ -1966,7 +2007,7 @@ export function createExtractor(
                 }
                 case 'style': {
                   // expand variants and such
-                  const styles = getStyles(attr.value, 'style')
+                  const styles = getProps(attr.value, 'style')
                   if (styles) {
                     attr.value = styles
                   }
@@ -1975,6 +2016,31 @@ export function createExtractor(
                   // prettier-ignore
                   if (shouldPrintDebug) logger.info(['  * styles (out)', logLines(objToStr(styles))].join(' '))
                   continue
+                }
+                case 'attr': {
+                  if (shouldFlatten && t.isJSXAttribute(attr.value)) {
+                    // we know all attributes are static
+                    // this only does one at a time but it should really do the whole group together...
+                    // also awkward to be doing it using jsxAttributes...
+                    const key = attr.value.name.name as string
+                    // undefined = boolean true
+                    const value = attemptEvalSafe(
+                      attr.value.value || t.booleanLiteral(true)
+                    )
+                    const outProps = getProps({ [key]: value }, `attr.${key}`)
+                    const outKey = Object.keys(outProps)[0]
+                    if (outKey) {
+                      const outVal = outProps[outKey]
+                      attr.value = t.jsxAttribute(
+                        t.jsxIdentifier(outKey),
+                        t.jsxExpressionContainer(
+                          typeof outVal === 'string'
+                            ? t.stringLiteral(outVal)
+                            : literalToAst(outVal)
+                        )
+                      )
+                    }
+                  }
                 }
               }
             } catch (err) {
@@ -2095,6 +2161,7 @@ export function createExtractor(
             node,
             lineNumbers,
             filePath,
+            config: tamaguiConfig,
             attemptEval,
             jsxPath: traversePath,
             originalNodeName,
@@ -2103,9 +2170,9 @@ export function createExtractor(
             completeProps,
             staticConfig,
           })
-        } catch (err) {
+        } catch (err: any) {
           node.attributes = ogAttributes
-          console.error(`err: ${err}`)
+          console.error(`@tamagui/static Error: ${err.message} ${err.stack}`)
         } finally {
           if (debugPropValue) {
             shouldPrintDebug = ogDebug

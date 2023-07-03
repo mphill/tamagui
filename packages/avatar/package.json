@@ -1,6 +1,6 @@
 {
   "name": "@tamagui/avatar",
-  "version": "1.7.5",
+  "version": "1.37.0",
   "sideEffects": [
     "*.css"
   ],
@@ -18,7 +18,7 @@
     "build": "tamagui-build",
     "watch": "tamagui-build --watch",
     "lint": "../../node_modules/.bin/rome check src",
-    "lint:fix": "../../node_modules/.bin/rome check --apply-suggested src",
+    "lint:fix": "../../node_modules/.bin/rome check --apply src",
     "clean": "tamagui-build clean",
     "clean:build": "tamagui-build clean:build"
   },
@@ -26,25 +26,25 @@
     "./package.json": "./package.json",
     ".": {
       "types": "./types/index.d.ts",
-      "import": "./dist/esm/index.mjs",
+      "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js"
     }
   },
   "dependencies": {
-    "@tamagui/core": "1.7.5",
-    "@tamagui/image": "1.7.5",
-    "@tamagui/shapes": "1.7.5",
-    "@tamagui/text": "1.7.5",
-    "@tamagui/use-event": "1.7.5"
+    "@tamagui/core": "1.37.0",
+    "@tamagui/image": "1.37.0",
+    "@tamagui/shapes": "1.37.0",
+    "@tamagui/text": "1.37.0",
+    "@tamagui/use-event": "1.37.0"
   },
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
   },
   "devDependencies": {
-    "@tamagui/build": "1.7.5",
+    "@tamagui/build": "1.37.0",
     "react": "^18.2.0",
-    "react-native": "*"
+    "react-native": "^0.71.7"
   },
   "publishConfig": {
     "access": "public"
